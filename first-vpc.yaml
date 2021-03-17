@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Launch VPC with 2 AZs, internet connectivity and 2 private/public subnets
+
+Parameters: 
+  environment: 
+    Type: String
+    Default: development
+    AllowedValues: 
+      - production 
+      - development 
+  
+  owner: 
+    Type: String
+    Default: Luke Dam
+  vpcCIDR: 
+    Type: String
+    Default: 10.0.0.0/16
+  publicSubnet0CIDR: 
+    Type: String
+    Default: 10.0.10.0/24
+  publicSubnet1CIDR: 
+    Type: String
+    Default: 10.0.20.0/24
+  privateSubnet0CIDR: 
+    Type: String
+    Default: 10.0.30.0/24
+  privateSubnet1CIDR: 
+    Type: String
+    Default: 10.0.40.0/24
+    
+Resources: 
+  vpc: 
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref vpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: 
+        - Key: environment
+          Value: !Ref environment
+        - Key: owner
+          Value: !Ref owner
+
+  internetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+      Tags: 
+        - Key: environment
+          Value: !Ref environment
+  
+  internetGatewayAttach: # enables connectivity with internet and the VPC
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref internetGateway
+      VpcId: !Ref vpc
+  
+  natEIP0: 
+    Type: AWS::EC2::EIP
+    DependsOn: internetGateway
+    Properties: 
+      Domain: vpc
+  natEIP1: 
+    Type: AWS::EC2::EIP
+    DependsOn: internetGateway
+    Properties: 
+      Domain: vpc
+
+  natGateway0:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt natEIP0.AllocationId
+      SubnetId: !Ref publicSubnet0
+  natGateway1: 
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt natEIP1.AllocationId
+      SubnetId: !Ref publicSubnet1
+
+  publicSubnet0: 
+    Type: AWS::EC2::Subnet
+    # DependsOn: vpc
+    Properties: 
+      AvailabilityZone: !Select [0, !GetAZs ""] # selects first AZ in array sorted alphabetical, dependent on region launched (e.g. us-east-1a)
+      CidrBlock: !Ref publicSubnet0CIDR
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref vpc
+  publicSubnet1: 
+    Type: AWS::EC2::Subnet
+    # DependsOn: vpc
+    Properties: 
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref publicSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref vpc
+
+  privateSubnet0: 
+    Type: AWS::EC2::Subnet
+    # DependsOn: vpc
+    Properties: 
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref privateSubnet0CIDR
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref vpc
+  privateSubnet1: 
+    Type: AWS::EC2::Subnet
+    # DependsOn: vpc
+    Properties: 
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref privateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref vpc
+
+  publicRouteTable: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref vpc
+  defaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: internetGatewayAttach
+    Properties:
+      RouteTableId: !Ref publicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref internetGateway
+
+  privateRouteTable: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref vpc
+  defaultPrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: internetGatewayAttach
+    Properties:
+      RouteTableId: !Ref privateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref internetGateway
+
+  routeTablePublic0: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref vpc
+  routeTablePublic1: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref vpc
+
+  routeTablePrivate0: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref vpc
+  routeTablePrivate1: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref vpc
+
+  publicSubnet0RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref routeTablePublic0
+      SubnetId: !Ref publicSubnet0
+  publicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref routeTablePublic1
+      SubnetId: !Ref publicSubnet1
+
+  privateSubnet0RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref routeTablePrivate0
+      SubnetId: !Ref privateSubnet0
+  privateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref routeTablePrivate1
+      SubnetId: !Ref privateSubnet1
+
+  noIngressSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "no-ingress-sg"
+      GroupDescription: "Security group with no ingress rule"
+      VpcId: !Ref vpc
+
+
+Outputs: # took this section from AWS documentation
+  VPC:
+    Description: A reference to the created VPC
+    Value: !Ref vpc
+
+  publicSubnets:
+    Description: A list of the public subnets
+    Value: !Join [ ",", [ !Ref publicSubnet0, !Ref publicSubnet1 ]]
+
+  privateSubnets:
+    Description: A list of the private subnets
+    Value: !Join [ ",", [ !Ref privateSubnet0, !Ref privateSubnet1 ]]
+
+  publicSubnet0:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !Ref publicSubnet0
+
+  publicSubnet1:
+    Description: A reference to the public subnet in the 2nd Availability Zone
+    Value: !Ref publicSubnet1
+
+  privateSubnet0:
+    Description: A reference to the private subnet in the 1st Availability Zone
+    Value: !Ref privateSubnet0
+
+  privateSubnet1:
+    Description: A reference to the private subnet in the 2nd Availability Zone
+    Value: !Ref privateSubnet1
+
+  noIngressSecurityGroup:
+    Description: Security group with no ingress rule
+    Value: !Ref noIngressSecurityGroup
+
+      # pseudo parameters
+      # cloudformation launches in parallel, use conditions for control
+      # meta data: modify console, organize parameters
+      # make a template with conditions and maps to allow flexibility for productions, development, proof on concept, regions
+      # AMI - amazon machine images, provides info required to launch instance

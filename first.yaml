@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: " " # date/version
+Description: Deploys a simple EC2 Instance into the demon VPC
+
+Parameters:  
+  # Template Parameters
+  corpSubnet: 
+    Type: String
+    Default: 10.10.0.0/16
+  instanceType: 
+    Type: String
+    Default: t3.small
+    AllowedValues: 
+      - t3.small
+      - t3.micro
+  vpcStack: 
+    Type: String
+    Default: demo-vpc
+  # Tag parameters
+  environment: 
+    Type: String
+    Default: development
+    AllowedValues: 
+      -development 
+      - production
+      - poc
+    owner: 
+      Type: String
+      Default: CuriousOrbit
+
+      ownerEmail: 
+Conditions: 
+  isProduction: !Equals [ !Ref environment, production] # Intrinsic function 
+  isEncrypted: 
+
+Mappings: # good for regions
+  ec2RegionMap: 
+    ca-central-1: 
+      production: ami-0b7de35cf47b997ae
+      developement: ami-0b7de35cf47b997ae
+    us-east-1: 
+      production: ami-038f1ca1bd58a5790
+      developement: ami-038f1ca1bd58a5790
+
+Resources: 
+  securityGroup0: 
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Demo Security Group
+      SecurityGroupIngress: 
+        - CidrIp: !Ref corpSubnet
+          Description: Allow Inbound SSH traffic from the corportate network
+          FromPort: 22
+          ToPort: 22
+          Protocol: tcp
+      VpcId: {'Fn::ImportValue': !Sub '${vpcStack}-'}
+      Tags: 
+        - Key: environment
+          Value: !Ref environment
+        - Key: owner
+          Value: !Ref owner
+        - Key: ownerEmail
+          Value: !Ref ownerEmail
+
+  instance0: 
+    Type: AWS::EC2::Instance
+    Condition: isProduction # only in production
+    DependsOn: 
+      - securityGroup0
+    Properties: 
+      ImageID: !FindInMap [ ec2RegionMap, !Ref 'AWS::Region', !Ref environment ]
+      InstanceType: !If [isProduction, !Ref instanceType, t3.micro]
+      SecurityGroupIds: 
+        - !Ref securityGroup0
+      SubnetId: !Select [0, !GetAZs ""]
+      Tags: 
+        - Key: environment
+          Value: !Ref environment
+        - Key: owner
+          Value: !Ref owner
+        - Key: ownerEmail
+          Value: !Ref ownerEmail
+
+  instance1:
+    Type: AWS::EC2::Instance
+    DependsOn: 
+      - securityGroup0
+    Properties: 
+      ImageID: !FindInMap [ ec2RegionMap, !Ref 'AWS::Region', !Ref environment ]
+      InstanceType: !If [isProduction, !Ref instanceType, t3.micro]
+      SecurityGroupIDs: 
+        - !Ref securityGroup0
+      SubnetId: !Select [0, !GetAZs ""]
+      Tags: 
+        - Key: environment
+          Value: !Ref environment
+        - Key: owner
+          Value: !Ref owner
+        - Key: ownerEmail
+          Value: !Ref ownerEmail
+
+
+
+      # pseudo parameters
+      # cloudformation launches in parallel, use conditions for control
+      # meta data: modify console, organize parameters
+      # make a template with conditions and maps to allow flexibility for productions, development, proof on concept, regions
+      # AMI - amazon machine images, provides info required to launch instance
