@@ -1,3 +1,5 @@
+# 03/17: added nat gateway to private subnets
+
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Launch VPC with 2 AZs, internet connectivity and 2 private/public subnets
 
@@ -59,22 +61,12 @@ Resources:
     DependsOn: internetGateway
     Properties: 
       Domain: vpc
-  natEIP1: 
-    Type: AWS::EC2::EIP
-    DependsOn: internetGateway
-    Properties: 
-      Domain: vpc
 
-  natGateway0:
+  natGateway:
     Type: AWS::EC2::NatGateway
     Properties: 
       AllocationId: !GetAtt natEIP0.AllocationId
       SubnetId: !Ref publicSubnet0
-  natGateway1: 
-    Type: AWS::EC2::NatGateway
-    Properties: 
-      AllocationId: !GetAtt natEIP1.AllocationId
-      SubnetId: !Ref publicSubnet1
 
   publicSubnet0: 
     Type: AWS::EC2::Subnet
@@ -114,6 +106,7 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties: 
       VpcId: !Ref vpc
+
   defaultPublicRoute:
     Type: AWS::EC2::Route
     DependsOn: internetGatewayAttach
@@ -126,52 +119,38 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties: 
       VpcId: !Ref vpc
+      Tags: 
+        - Key: network
+          Value: Private
+
   defaultPrivateRoute:
     Type: AWS::EC2::Route
     DependsOn: internetGatewayAttach
     Properties:
       RouteTableId: !Ref privateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref internetGateway
-
-  routeTablePublic0: 
-    Type: AWS::EC2::RouteTable
-    Properties: 
-      VpcId: !Ref vpc
-  routeTablePublic1: 
-    Type: AWS::EC2::RouteTable
-    Properties: 
-      VpcId: !Ref vpc
-
-  routeTablePrivate0: 
-    Type: AWS::EC2::RouteTable
-    Properties: 
-      VpcId: !Ref vpc
-  routeTablePrivate1: 
-    Type: AWS::EC2::RouteTable
-    Properties: 
-      VpcId: !Ref vpc
+      NatGatewayId: !Ref natGateway # natgateway allows egress connections from private subnet, iwthin the public subnet
 
   publicSubnet0RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref routeTablePublic0
+      RouteTableId: !Ref publicRouteTable
       SubnetId: !Ref publicSubnet0
   publicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref routeTablePublic1
+      RouteTableId: !Ref publicRouteTable
       SubnetId: !Ref publicSubnet1
 
   privateSubnet0RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref routeTablePrivate0
+      RouteTableId: !Ref privateRouteTable
       SubnetId: !Ref privateSubnet0
   privateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref routeTablePrivate1
+      RouteTableId: !Ref privateRouteTable
       SubnetId: !Ref privateSubnet1
 
   noIngressSecurityGroup:
